@@ -1,6 +1,12 @@
 import json
 import requests
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
+
+# Configuration
+MAX_WORKERS = 10  # Number of concurrent threads (adjust based on server capacity)
+RATE_LIMIT_DELAY = 0.05  # Reduced delay since we're doing parallel requests
 
 # Read the simplified courses JSON
 print("Reading simplified_courses.json...")
@@ -27,21 +33,38 @@ session_id = "GH0JQG8JLMJVED9MSNAQ"
 
 # Only process first 10 courses for debugging
 courses_to_process = simplified_courses
-print(f"Processing first {len(courses_to_process)} courses for debugging")
+print(f"Processing {len(courses_to_process)} courses with {MAX_WORKERS} threads")
 
-# Process each course
-for i, course in enumerate(courses_to_process):
+# Thread-safe progress tracking
+progress_lock = Lock()
+completed_count = [0]  # Use list to allow modification in nested function
+
+def format_time(time_str):
+    """Format time string (0900 -> 9:00 AM)"""
+    if len(time_str) == 4:
+        hour = int(time_str[:2])
+        minute = time_str[2:]
+        period = 'AM' if hour < 12 else 'PM'
+        if hour > 12:
+            hour -= 12
+        elif hour == 0:
+            hour = 12
+        return f"{hour}:{minute} {period}"
+    return time_str
+
+def process_course(course):
+    """Process a single course to fetch and add schedule times"""
     curriculum_id = course['curriculum_id']
     
     # Get title_code for this curriculum_id
     if curriculum_id not in curriculum_to_titlecode:
-        print(f"Warning: No title_code found for {course['course_name']}")
-        continue
+        with progress_lock:
+            completed_count[0] += 1
+            print(f"[{completed_count[0]}/{len(courses_to_process)}] Warning: No title_code found for {course['course_name']}")
+        return course
     
     title_code = curriculum_to_titlecode[curriculum_id]
     course_id = f"{curriculum_id}-{title_code}"
-    
-    print(f"Fetching {i+1}/{len(courses_to_process)}: {course['course_name']}")
     
     # Prepare payload
     payload = {
@@ -92,19 +115,6 @@ for i, course in enumerate(courses_to_process):
                                 room = time_block.get('room', '')
                                 
                                 if day_string and begin and end:
-                                    # Format time nicely (0900 -> 9:00 AM)
-                                    def format_time(time_str):
-                                        if len(time_str) == 4:
-                                            hour = int(time_str[:2])
-                                            minute = time_str[2:]
-                                            period = 'AM' if hour < 12 else 'PM'
-                                            if hour > 12:
-                                                hour -= 12
-                                            elif hour == 0:
-                                                hour = 12
-                                            return f"{hour}:{minute} {period}"
-                                        return time_str
-                                    
                                     time_ranges.append({
                                         'days': day_string,
                                         'start_time': format_time(begin),
@@ -118,19 +128,51 @@ for i, course in enumerate(courses_to_process):
                             section['times'] = None
                     else:
                         section['times'] = None
-            
+        else:
+            # If request failed, set times to None for all sections
+            for section in course['sections']:
+                section['times'] = None
+        
         # Small delay to be nice to the server
-        time.sleep(0.13)
+        time.sleep(RATE_LIMIT_DELAY)
         
     except Exception as e:
         print(f"Error fetching {course['course_name']}: {e}")
         for section in course['sections']:
             section['times'] = None
+    
+    # Update progress
+    with progress_lock:
+        completed_count[0] += 1
+        if completed_count[0] % 50 == 0 or completed_count[0] == len(courses_to_process):
+            print(f"Progress: {completed_count[0]}/{len(courses_to_process)} courses processed ({100*completed_count[0]//len(courses_to_process)}%)")
+    
+    return course
 
-# Save updated JSON (only first 10 for debugging)
+# Process courses using thread pool
+print(f"\nStarting parallel processing with {MAX_WORKERS} workers...")
+start_time = time.time()
+
+with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    # Submit all tasks
+    future_to_course = {executor.submit(process_course, course): course for course in courses_to_process}
+    
+    # Wait for all tasks to complete (results are already stored in course objects)
+    for future in as_completed(future_to_course):
+        try:
+            future.result()  # This will raise any exceptions that occurred
+        except Exception as e:
+            course = future_to_course[future]
+            print(f"Unexpected error processing {course['course_name']}: {e}")
+
+elapsed_time = time.time() - start_time
+print(f"\nCompleted in {elapsed_time:.1f} seconds ({elapsed_time/60:.1f} minutes)")
+
+# Save updated JSON
+print("\nSaving results to simplified_courses_with_times_final.json...")
 with open('simplified_courses_with_times_final.json', 'w') as f:
     json.dump(courses_to_process, f, indent=2)
 
-print(f"\nCreated simplified_courses_with_times_debug.json")
+print(f"Created simplified_courses_with_times_final.json")
 print("\nFirst example with times:")
 print(json.dumps(courses_to_process[0], indent=2))

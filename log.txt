@@ -3,3 +3,4 @@
 11/27/25, Planned upcoming work and oriented myself with the project specs, 0.5
 12/1/25,  Built the Webscraper and Database Construction methods, 5
 12/2/25,  Setup Supabase and Query methods, 2
+12/2/25,  Built and debugged demo for class presentation 2.5

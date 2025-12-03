@@ -58,6 +58,7 @@ class CourseSearch:
         """
         Search courses and return structured results with sections and professor info.
         Avoids returning duplicate professor/rating data.
+        Only return professor reviews where the review's class_name matches the course being examined, using partial match (ignoring spaces).
         """
         if not query or not query.strip():
             return []
@@ -111,6 +112,7 @@ class CourseSearch:
             num = str(course.get("catalog_number", "")).strip()
             suf = (course.get("catalog_suffix") or "").strip()
             course_code = f"{dept} {num}{suf}".strip()
+            course_code_no_space = normalize(f"{dept}{num}{suf}")
 
             sections = self.fetch_sections_for_course(course_id)
             
@@ -136,7 +138,19 @@ class CourseSearch:
 
                 # Use professor info from first section
                 prof_info = sections_for_prof[0].get("professor") or {}
-                
+
+                # Only include reviews where class_name matches this course (partial, ignore spaces)
+                filtered_ratings = []
+                for r in ratings:
+                    class_name = r.get("class_name", "")
+                    if class_name:
+                        # Normalize class_name for matching (e.g. REL 225 -> rel225)
+                        class_norm = normalize(str(class_name))
+                        # Only include if the (normalized) class_name is a substring of course_code_no_space or vice versa
+                        if class_norm and (class_norm in course_code_no_space or course_code_no_space in class_norm):
+                            filtered_ratings.append(r)
+                    # If class_name is missing, do not include the review
+
                 prof_entry = {
                     "professor_id": prof_id,
                     "first_name": prof_info.get("first_name", ""),
@@ -169,7 +183,7 @@ class CourseSearch:
                             "would_take_again": r.get("would_take_again"),
                             "tags": [tag.get("tag_name") for tag in r.get("tags", [])] if r.get("tags") else [],
                         }
-                        for r in ratings
+                        for r in filtered_ratings
                     ]
                 }
                 

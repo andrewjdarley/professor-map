@@ -54,6 +54,51 @@ def format_time_slot(time_data: dict) -> str:
     
     return f"{days} {time_str} @ {location}"
 
+def deduplicate_times(times: list) -> list:
+    """Remove duplicate time entries, keeping only unique combinations."""
+    seen = set()
+    unique = []
+    for t in times:
+        key = (t.get("days"), t.get("start_time"), t.get("end_time"), 
+               t.get("building"), t.get("room"))
+        if key not in seen:
+            seen.add(key)
+            unique.append(t)
+    return unique
+
+def display_time_boxes(times: list):
+    """Display meeting times as Apple-style tags."""
+    if not times:
+        st.caption("No times scheduled")
+        return
+    
+    # Deduplicate times
+    unique_times = deduplicate_times(times)
+    
+    # Create tag HTML
+    tags_html = '<div style="display: flex; flex-wrap: wrap; gap: 8px;">'
+    
+    for time_data in unique_times:
+        days = time_data.get("days", "")
+        start = time_data.get("start_time", "")
+        end = time_data.get("end_time", "")
+        building = time_data.get("building", "")
+        room = time_data.get("room", "")
+        
+        location = f"{building} {room}".strip() if building or room else "TBA"
+        time_str = f"{start} - {end}".strip() if start or end else "TBA"
+        
+        tag_content = f"{days} | {time_str} | {location}"
+        
+        tags_html += f"""
+        <div style="display: inline-flex; align-items: center; background-color: #f0f0f0; border: 1px solid #d0d0d0; border-radius: 20px; padding: 6px 12px; font-size: 13px; color: #333; white-space: nowrap;">
+            {tag_content}
+        </div>
+        """
+    
+    tags_html += '</div>'
+    st.markdown(tags_html, unsafe_allow_html=True)
+
 # Search input
 query = st.text_input(
     "Search for a course",
@@ -111,16 +156,19 @@ if query:
                             'times': times
                         })
                 
-                # Sort sections by first time
-                def get_section_sort_key(item):
-                    times = item['times']
-                    if times:
-                        return (get_day_order(times[0].get("days", "")), times[0].get("start_time", ""))
-                    return (7, "99:99 PM")
+                # Sort sections by section number (as requested in edit prompt)
+                def section_number_sort_key(item):
+                    # Handle both string and int section_numbers
+                    sec_num = item['section'].get('section_number', None)
+                    # Try to convert to int for proper numeric ordering, fallback to string
+                    try:
+                        return int(sec_num)
+                    except (ValueError, TypeError):
+                        return str(sec_num).zfill(8) if sec_num is not None else ""
                 
-                all_sections = sorted(all_sections, key=get_section_sort_key)
+                all_sections = sorted(all_sections, key=section_number_sort_key)
                 
-                # Display sections organized by time
+                # Display sections organized by section number
                 for item in all_sections:
                     sec = item['section']
                     prof = item['professor']
@@ -128,40 +176,109 @@ if query:
                     
                     prof_name = f"{prof['first_name']} {prof['last_name']}".strip() or "Unknown"
                     
-                    # Build section header with time info
-                    if times:
-                        time_display = " | ".join([format_time_slot(t) for t in times])
-                        sec_header = f"Section {sec['section_number']} — {time_display}"
-                    else:
-                        sec_header = f"Section {sec['section_number']} (no times)"
+                    # Build section header with consolidated time info
+                    unique_times = deduplicate_times(times)
+                    
+                    # Consolidate times that are the same and combine days
+                    time_to_days = {}
+                    for t in unique_times:
+                        days = t.get('days', '')
+                        time_str = f"{t.get('start_time', '')}-{t.get('end_time', '')}".strip("-")
+                        if days and time_str:
+                            if time_str not in time_to_days:
+                                time_to_days[time_str] = []
+                            time_to_days[time_str].append(days)
+                    
+                    # Create consolidated header string
+                    time_parts = []
+                    for time_str, days_list in time_to_days.items():
+                        combined_days = " ".join(days_list)
+                        time_parts.append(f"{combined_days} {time_str}")
+                    
+                    time_header = " ".join(time_parts) if time_parts else ""
+                    sec_header = f"Section {sec['section_number']} — {prof_name} • {time_header}".rstrip(" •")
                     
                     with st.expander(sec_header, expanded=False):
-                        # Professor summary (always visible)
-                        st.markdown(f"**Professor:** {prof_name}")
+                        # Display time tags inside expander
+                        if unique_times:
+                            # st.markdown("**Meeting Times:**")
+                            prof_col, time_col = st.columns([2,1])
+                            with prof_col:
+                                st.markdown(f"### **Professor:** {prof_name}")
+                            with time_col:
+                                st.markdown('<div style="margin-top:8px"></div>', unsafe_allow_html=True)
+                                display_time_boxes(unique_times)
                         
                         prof_cols = st.columns(3)
                         
                         if prof['avg_rating'] is not None:
+                            def get_color(val):
+                                """Given a value between 1 and 5, return a hex color based on the scale."""
+                                if val < 1.8:
+                                    return "#ff3b30"  # red
+                                elif val < 2.6:
+                                    return "#ff9500"  # orange
+                                elif val < 3.4:
+                                    return "#ffcc00"  # yellow
+                                elif val < 4.2:
+                                    return "#34c759"  # green
+                                else:
+                                    return "#007aff"  # blue
+
+                            # Ensure values are in the 1-5 range for display and color
+                            avg_rating_val = min(max(prof['avg_rating'], 1), 5) if prof['avg_rating'] is not None else 1
+                            avg_diff_val = min(max(prof['avg_difficulty'], 1), 5) if prof['avg_difficulty'] is not None else 1
+                            # Flip for difficulty color (easy=blue, hard=red)
+                            avg_diff_val_flipped = 6 - avg_diff_val
+                            would_retake_val = (prof['would_take_again_percent'] or 0) / 100.0
+
+                            rating_color = get_color(avg_rating_val)
+                            diff_color = get_color(avg_diff_val_flipped)
+                            # For would retake, interpolate into 1-5
+                            would_retake_score = 1 + 4 * would_retake_val
+                            retake_color = get_color(would_retake_score)
+
                             with prof_cols[0]:
-                                st.metric("Rating", f"{prof['avg_rating']:.2f}/5.0")
+                                st.markdown(
+                                    "<div style='margin-bottom: -10px;'><h4 style='margin-bottom:2px;margin-top:2px;'>Rating</h4></div>",
+                                    unsafe_allow_html=True
+                                )
+                                st.markdown(
+                                    f"<div style='font-size: 1.6em; font-weight: 600; color:{rating_color}; margin-top:-10px; margin-bottom:-18px'>{prof['avg_rating']:.2f}/5.0</div>",
+                                    unsafe_allow_html=True
+                                )
                             with prof_cols[1]:
-                                st.metric("Difficulty", f"{prof['avg_difficulty']:.2f}/5.0")
+                                st.markdown(
+                                    "<div style='margin-bottom: -10px;'><h4 style='margin-bottom:2px;margin-top:2px;'>Difficulty</h4></div>",
+                                    unsafe_allow_html=True
+                                )
+                                st.markdown(
+                                    f"<div style='font-size: 1.6em; font-weight: 600; color:{diff_color}; margin-top:-10px; margin-bottom:-18px'>{prof['avg_difficulty']:.2f}/5.0</div>",
+                                    unsafe_allow_html=True
+                                )
                             with prof_cols[2]:
-                                st.metric("Would Retake", f"{prof['would_take_again_percent']:.0f}%")
+                                st.markdown(
+                                    "<div style='margin-bottom: -10px;'><h4 style='margin-bottom:2px;margin-top:2px;'>Would Retake</h4></div>",
+                                    unsafe_allow_html=True
+                                )
+                                st.markdown(
+                                    f"<div style='font-size: 1.6em; font-weight: 600; color:{retake_color}; margin-top:-10px; margin-bottom:-18px'>{prof['would_take_again_percent']:.0f}%</div>",
+                                    unsafe_allow_html=True
+                                )
                         else:
                             st.info("No ratings yet")
                         
                         st.markdown("---")
                         
                         # Section details
-                        st.markdown("**Section Details:**")
-                        st.write(f"**Credit Hours:** {sec['credit_hours']}")
-                        st.write(f"**Type:** {sec['section_type']}")
-                        st.write(f"**Mode:** {sec['mode_desc']}")
+                        # '''st.markdown("**Section Details:**")
+                        # st.write(f"**Credit Hours:** {sec['credit_hours']}")
+                        # st.write(f"**Type:** {sec['section_type']}")
+                        # st.write(f"**Mode:** {sec['mode_desc']}")'''
                         
                         # Professor reviews dropdown
                         if prof['ratings']:
-                            st.markdown("---")
+                            # st.markdown("---")    
                             with st.expander("📋 Professor Reviews", expanded=False):
                                 for rating in prof['ratings'][:5]:
                                     with st.container(border=True):

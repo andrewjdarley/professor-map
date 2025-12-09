@@ -5,3 +5,5 @@
 12/2/25,  Setup Supabase and Query methods, 2
 12/2/25,  Built and debugged demo for class presentation 2.5
 12/3/25,  Prettified demo 2
+12/3/25,  Integrated Immediate feedback from presentation 1
+12/8/25,  Modeled remaining work 1

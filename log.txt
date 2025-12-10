@@ -7,3 +7,4 @@
 12/3/25,  Prettified demo 2
 12/3/25,  Integrated Immediate feedback from presentation 1
 12/8/25,  Modeled remaining work 1
+12/9/25,  Migration to Javascript and MyMAP syntax integration 2

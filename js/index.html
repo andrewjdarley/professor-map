@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Professor Scraper</title>
+  <style>
+    body {
+      font-family: monospace;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 20px;
+      margin: 0;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #4ec9b0;
+    }
+    .container {
+      display: flex;
+      gap: 20px;
+      margin-top: 20px;
+    }
+    .left-panel {
+      flex: 1;
+    }
+    .right-panel {
+      flex: 1;
+    }
+    textarea {
+      width: 100%;
+      height: 400px;
+      background: #252526;
+      color: #d4d4d4;
+      border: 1px solid #3e3e42;
+      border-radius: 4px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 12px;
+      resize: vertical;
+    }
+    pre {
+      background: #252526;
+      padding: 15px;
+      border-radius: 6px;
+      overflow-x: auto;
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid #3e3e42;
+    }
+    button {
+      padding: 10px 20px;
+      background: #007acc;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      margin-top: 10px;
+      margin-right: 10px;
+    }
+    button:hover {
+      background: #005a9e;
+    }
+    button:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: #5a5a5a;
+    }
+    button.secondary:hover {
+      background: #6a6a6a;
+    }
+    button.success {
+      background: #28a745;
+    }
+    button.success:hover {
+      background: #218838;
+    }
+    .error {
+      color: #f48771;
+    }
+    .success {
+      color: #6a9955;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: #4ec9b0;
+      font-weight: bold;
+    }
+    .instructions {
+      background: #252526;
+      padding: 15px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      border-left: 4px solid #007acc;
+    }
+    .instructions ol {
+      margin: 10px 0;
+      padding-left: 20px;
+    }
+    .instructions li {
+      margin: 5px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>📊 Professor Scraper</h1>
+  
+  <div class="instructions">
+    <strong>How to use:</strong>
+    <ol>
+      <li>Go to your course registration page (e.g., BYU Class Schedule)</li>
+      <li>Right-click → "Inspect" → find the HTML containing professor sections</li>
+      <li>Copy the HTML and paste it into the textarea below</li>
+      <li>Click "Run Scraper" to extract and enrich professor data</li>
+      <li>Click "Open Enhanced View" to see the results in a new tab!</li>
+    </ol>
+  </div>
+
+  <div class="container">
+    <div class="left-panel">
+      <label for="htmlInput">Paste Course HTML Here:</label>
+      <textarea id="htmlInput" placeholder="Paste the HTML from your course registration page here..."></textarea>
+      <button id="runBtn" onclick="runScraper()">Run Scraper</button>
+      <button class="secondary" onclick="clearAll()">Clear All</button>
+      <button class="secondary" onclick="loadSample()">Load Sample Data</button>
+      <button class="success" id="openViewBtn" onclick="openEnhancedView()" disabled>Open Enhanced View</button>
+    </div>
+
+    <div class="right-panel">
+      <label>Output:</label>
+      <pre id="output">Results will appear here...</pre>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.38.5/+esm';
+
+    const SUPABASE_URL = 'https://dltiuafpersxnnwxfwve.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsdGl1YWZwZXJzeG5ud3hmd3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2ODMxODUsImV4cCI6MjA4MDI1OTE4NX0.zuThXcIZVh0eyWLGBJZrrgBMFQQbUm302GOSHRlpc-E'; // Replace with your anon key
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const output = document.getElementById('output');
+    const runBtn = document.getElementById('runBtn');
+    const openViewBtn = document.getElementById('openViewBtn');
+    const htmlInput = document.getElementById('htmlInput');
+
+    // Store results globally
+    window.scrapedResults = null;
+
+    const SAMPLE_HTML = `
+      <div class="chooseASectionMainHeader">
+        <h1>CS 235: Data Structures</h1>
+      </div>
+      <div class="sectionDetailsRoot">
+        <div class="sectionDetailsFlex">
+          <div class="sectionDetailsCol">
+            <h4>John Smith</h4>
+            <div>Section 001</div>
+          </div>
+        </div>
+        <div class="sectionDetailsTimeGroup">
+          <div class="sectionDetailsDays">MWF</div>
+          <div class="sectionDetailsTimeRoom">
+            <div class="sectionDetailsTime">10:00 AM - 11:00 AM</div>
+            <div class="sectionDetailsRoom">TMCB 123</div>
+          </div>
+        </div>
+        <div class="sectionDetailsSeatPool">15/30 seats left</div>
+      </div>
+    `;
+
+    const originalLog = console.log;
+    const originalError = console.error;
+    
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      output.textContent += args.join(' ') + '\n';
+      output.scrollTop = output.scrollHeight;
+    };
+
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      output.textContent += `❌ ${args.join(' ')}\n`;
+      output.scrollTop = output.scrollHeight;
+    };
+
+    class ProfessorScraper {
+      constructor(html) {
+        this.html = html;
+        this.professors = [];
+        this.courseCode = null;
+      }
+
+      extractProfessors() {
+        if (!this.html) throw new Error('No HTML provided.');
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(this.html, 'text/html');
+
+        const headerH1 = doc.querySelector('.chooseASectionMainHeader h1');
+        if (headerH1) {
+          const match = headerH1.textContent.match(/([A-Z]+\s+\d+[A-Z]?)/);
+          this.courseCode = match ? match[0].trim() : null;
+        }
+
+        const sectionElements = doc.querySelectorAll('.sectionDetailsRoot');
+        console.log(`Found ${sectionElements.length} sections`);
+
+        if (sectionElements.length === 0) {
+          console.error('No sections found. Make sure you pasted the correct HTML.');
+          return this.professors;
+        }
+
+        sectionElements.forEach((section) => {
+          try {
+            const h4 = section.querySelector('.sectionDetailsFlex > .sectionDetailsCol:first-child h4');
+            if (!h4) return;
+
+            const professorName = h4.textContent.trim();
+            if (!professorName) return;
+
+            const sectionDiv = h4.nextElementSibling;
+            const sectionMatch = sectionDiv?.textContent.match(/Section (\d+)/);
+            const sectionNumber = sectionMatch ? sectionMatch[1] : null;
+
+            const timeGroup = section.querySelector('.sectionDetailsTimeGroup');
+            let days = '', startTime = '', endTime = '', building = '', room = '';
+
+            if (timeGroup) {
+              const daysEl = timeGroup.querySelector('.sectionDetailsDays');
+              days = daysEl?.textContent.trim() || '';
+
+              const timeRoom = timeGroup.querySelector('.sectionDetailsTimeRoom');
+              if (timeRoom) {
+                const timeEl = timeRoom.querySelector('.sectionDetailsTime');
+                if (timeEl) {
+                  const timeText = timeEl.textContent.trim();
+                  const [start, end] = timeText.split('-').map(t => t.trim());
+                  startTime = start;
+                  endTime = end;
+                }
+
+                const roomEl = timeRoom.querySelector('.sectionDetailsRoom');
+                if (roomEl) {
+                  const roomText = roomEl.textContent.trim();
+                  const [build, rm] = roomText.split(/\s+/);
+                  building = build;
+                  room = rm;
+                }
+              }
+            }
+
+            const seatPool = section.querySelector('.sectionDetailsSeatPool');
+            const seatMatch = seatPool?.textContent.match(/(\d+)\/(\d+)\s+seats\s+left/);
+            const seatsLeft = seatMatch ? parseInt(seatMatch[1]) : null;
+            const totalSeats = seatMatch ? parseInt(seatMatch[2]) : null;
+
+            this.professors.push({
+              name: professorName,
+              sectionNumber,
+              days,
+              startTime,
+              endTime,
+              building,
+              room,
+              seatsLeft,
+              totalSeats
+            });
+
+          } catch (error) {
+            console.error('Error extracting professor:', error);
+          }
+        });
+
+        console.log(`✓ Extracted ${this.professors.length} professors`);
+        return this.professors;
+      }
+
+      async querySupabase(professorName) {
+        const normalizedName = professorName.replace(/\./g, '').replace(/\s+/g, ' ').trim();
+        const [firstName, ...lastNameParts] = normalizedName.split(/\s+/);
+        const lastName = lastNameParts.join(' ');
+
+        try {
+          let { data, error } = await supabase
+            .from('professors')
+            .select('professor_id,first_name,last_name,avg_rating,avg_difficulty,would_take_again_percent,num_ratings')
+            .ilike('first_name', `%${firstName}%`)
+            .ilike('last_name', `%${lastName}%`)
+            .limit(1);
+
+          if ((!data || data.length === 0) && professorName.includes('.')) {
+            const firstNameNoDots = firstName.replace(/\./g, '');
+            ({ data, error } = await supabase
+              .from('professors')
+              .select('professor_id,first_name,last_name,avg_rating,avg_difficulty,would_take_again_percent,num_ratings')
+              .ilike('first_name', `%${firstNameNoDots}%`)
+              .ilike('last_name', `%${lastName}%`)
+              .limit(1));
+          }
+
+          if (error && error.code !== 'PGRST116') {
+            throw new Error(error.message);
+          }
+
+          return data && data.length > 0 ? data[0] : null;
+
+        } catch (error) {
+          console.error(`Error querying Supabase for ${professorName}:`, error.message);
+          return null;
+        }
+      }
+
+      async enrichProfessors() {
+        console.log('\nQuerying Supabase for professor ratings...');
+
+        for (let prof of this.professors) {
+          const rating = await this.querySupabase(prof.name);
+          prof.rating = rating || {
+            avg_rating: null,
+            avg_difficulty: null,
+            would_take_again_percent: null,
+            num_ratings: 0
+          };
+
+          if (rating) {
+            console.log(`✓ ${prof.name}: ${rating.avg_rating?.toFixed(2)}/5 (${rating.num_ratings} ratings)`);
+          } else {
+            console.log(`✗ ${prof.name}: No ratings found`);
+          }
+        }
+
+        return this.professors;
+      }
+
+      displayResults() {
+        console.log('\n' + '='.repeat(80));
+        console.log(`COURSE: ${this.courseCode}`);
+        console.log('='.repeat(80));
+
+        this.professors.forEach(prof => {
+          console.log(`\n${prof.name} (Section ${prof.sectionNumber})`);
+          console.log(`  Time: ${prof.days} ${prof.startTime}–${prof.endTime}`);
+          console.log(`  Location: ${prof.building} ${prof.room}`);
+          console.log(`  Seats: ${prof.seatsLeft}/${prof.totalSeats} available`);
+
+          if (prof.rating && prof.rating.avg_rating) {
+            console.log(`  Rating: ${prof.rating.avg_rating.toFixed(2)}/5.0 (${prof.rating.num_ratings} ratings)`);
+            console.log(`  Difficulty: ${prof.rating.avg_difficulty?.toFixed(2)}/5.0`);
+            console.log(`  Would Retake: ${prof.rating.would_take_again_percent?.toFixed(0)}%`);
+          } else {
+            console.log(`  Rating: No data`);
+          }
+        });
+
+        console.log('\n' + '='.repeat(80));
+      }
+
+      async run() {
+        try {
+          this.extractProfessors();
+          await this.enrichProfessors();
+          this.displayResults();
+          return this.professors;
+        } catch (error) {
+          console.error('Fatal error:', error);
+          throw error;
+        }
+      }
+    }
+
+    window.runScraper = async function() {
+      const html = htmlInput.value.trim();
+      
+      if (!html) {
+        output.textContent = '❌ Please paste HTML content first or click "Load Sample Data" to test.';
+        return;
+      }
+
+      output.textContent = '';
+      runBtn.disabled = true;
+      openViewBtn.disabled = true;
+      
+      try {
+        const scraper = new ProfessorScraper(html);
+        const results = await scraper.run();
+        
+        // Store results with course code
+        window.scrapedResults = {
+          courseCode: scraper.courseCode,
+          professors: results
+        };
+        
+        console.log(`\n✅ Successfully processed ${results.length} professors`);
+        openViewBtn.disabled = false;
+      } catch (error) {
+        console.error(error.message);
+      } finally {
+        runBtn.disabled = false;
+      }
+    }
+
+    window.clearAll = function() {
+      htmlInput.value = '';
+      output.textContent = 'Results will appear here...';
+      openViewBtn.disabled = true;
+      window.scrapedResults = null;
+    }
+
+    window.loadSample = function() {
+      htmlInput.value = SAMPLE_HTML;
+      output.textContent = '✓ Sample data loaded. Click "Run Scraper" to test.';
+    }
+
+    window.openEnhancedView = function() {
+      if (!window.scrapedResults) {
+        alert('Please run the scraper first!');
+        return;
+      }
+
+      // Open new window and inject enhanced HTML
+      const newWindow = window.open('', '_blank');
+      newWindow.document.write(generateEnhancedHTML(window.scrapedResults));
+      newWindow.document.close();
+    }
+
+    function generateEnhancedHTML(data) {
+      const { courseCode, professors } = data;
+      
+      let sectionsHTML = '';
+      
+      professors.forEach(prof => {
+        const hasRating = prof.rating && prof.rating.avg_rating;
+        const ratingColor = hasRating ? getRatingColor(prof.rating.avg_rating) : '#999';
+        
+        sectionsHTML += `
+          <article class="sectionDetailsRoot" style="background: white; border-radius: 8px; padding: 20px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <div class="sectionDetailsFlex" style="display: grid; grid-template-columns: 2fr 1fr 2fr 1fr; gap: 20px; align-items: start;">
+              <div class="sectionDetailsCol">
+                <h4 style="margin: 0 0 5px 0; font-size: 18px; color: #002E5D;">${prof.name}</h4>
+                <div style="color: #666;">Section ${prof.sectionNumber}</div>
+              </div>
+              
+              <div class="sectionDetailsCol">
+                <div class="sectionDetailsSeatPool" style="display: flex; align-items: center; gap: 8px;">
+                  <div style="font-weight: bold; color: ${prof.seatsLeft > 10 ? '#28a745' : prof.seatsLeft > 5 ? '#ffc107' : '#dc3545'};">
+                    ${prof.seatsLeft}/${prof.totalSeats} seats left
+                  </div>
+                </div>
+              </div>
+              
+              <div class="sectionDetailsCol">
+                <div class="sectionDetailsTimeGroup">
+                  <div style="font-weight: bold; color: #002E5D; margin-bottom: 4px;">${prof.days}</div>
+                  <div style="color: #666;">${prof.startTime} - ${prof.endTime}</div>
+                  <div style="color: #666;">${prof.building} ${prof.room}</div>
+                </div>
+              </div>
+              
+              <div class="sectionDetailsCol" style="text-align: right;">
+                ${hasRating ? `
+                  <div style="background: ${ratingColor}; color: white; padding: 8px 12px; border-radius: 6px; display: inline-block;">
+                    <div style="font-size: 24px; font-weight: bold;">${prof.rating.avg_rating.toFixed(1)}</div>
+                    <div style="font-size: 12px;">/ 5.0</div>
+                  </div>
+                  <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                    <div>Difficulty: ${prof.rating.avg_difficulty?.toFixed(1)}/5.0</div>
+                    <div>Would Retake: ${prof.rating.would_take_again_percent?.toFixed(0)}%</div>
+                    <div>${prof.rating.num_ratings} ratings</div>
+                  </div>
+                ` : `
+                  <div style="color: #999; font-style: italic;">No ratings yet</div>
+                `}
+              </div>
+            </div>
+          </article>
+        `;
+      });
+
+      return `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>${courseCode} - Enhanced View</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+              background: #f5f5f5;
+              margin: 0;
+              padding: 20px;
+            }
+            .container {
+              max-width: 1200px;
+              margin: 0 auto;
+            }
+            .header {
+              background: #002E5D;
+              color: white;
+              padding: 30px;
+              border-radius: 8px;
+              margin-bottom: 20px;
+            }
+            .header h1 {
+              margin: 0;
+              font-size: 32px;
+            }
+            .header p {
+              margin: 10px 0 0 0;
+              opacity: 0.9;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>${courseCode}</h1>
+              <p>Enhanced view with professor ratings • ${professors.length} sections available</p>
+            </div>
+            ${sectionsHTML}
+          </div>
+        </body>
+        </html>
+      `;
+    }
+
+    function getRatingColor(rating) {
+      if (rating >= 4.2) return '#007aff';  // blue
+      if (rating >= 3.4) return '#34c759';  // green
+      if (rating >= 2.6) return '#ffcc00';  // yellow
+      if (rating >= 1.8) return '#ff9500';  // orange
+      return '#ff3b30';  // red
+    }
+
+    window.addEventListener('error', (e) => {
+      console.error('Global error:', e.error);
+    });
+  </script>
+</body>
+</html>

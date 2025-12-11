@@ -4,7 +4,7 @@ This project is all about improving the class registration process at BYU in whi
 
 ### Demo Video
 
-<video src="demo.webm" controls style="max-width: 100%; height: auto;">
+<video src="https://github.com/andrewjdarley/professor-map/blob/main/demo.webm" controls style="max-width: 100%; height: auto;">
   Video not found
 </video>
 

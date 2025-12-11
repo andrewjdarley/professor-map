@@ -8,6 +8,8 @@ This project is all about improving the class registration process at BYU in whi
   Video not found
 </video>
 
+https://github.com/andrewjdarley/REPO_NAME/raw/main/demo.webm
+
 ### What I learned
 
 This project was my first experience integrating a webscraper directly with a database. And I've certainly learned that this is a much better way of working things than just leaving it in json files. Supabase really is great at managing exactly what I avoid doing all the time so I'm going to change my habits. 

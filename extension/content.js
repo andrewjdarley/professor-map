@@ -19,7 +19,6 @@ class ProfessorEnhancer {
         console.log(`[MyMAP] Querying: firstName="${firstName}" lastName="${lastName}"`);
 
         try {
-            // Send message to background worker to make the fetch
             const result = await chrome.runtime.sendMessage({
                 action: 'queryProfessor',
                 firstName: firstName,
@@ -43,55 +42,76 @@ class ProfessorEnhancer {
         return '#ff3b30';
     }
 
+    getDifficultyColor(difficulty) {
+        if (difficulty <= 2.0) return '#085DDC';
+        if (difficulty <= 2.8) return '#34c759';
+        if (difficulty <= 3.4) return '#ffcc00';
+        if (difficulty <= 4.2) return '#ff9500';
+        return '#ff3b30';
+    }
+
     createRatingElement(rating) {
         const container = document.createElement('div');
         container.className = 'professor-rating-badge';
         container.style.cssText = `
             display: flex;
-            flex-direction: column;
-            align-items: center;
+            flex-direction: row;
+            align-items: stretch;
             gap: 6px;
-            padding: 8px 12px;
+            padding: 8px 10px;
             background: white;
             border-radius: 6px;
             border: 1px solid #e0e0e0;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            min-width: 70px;
         `;
 
         if (rating) {
-            const ratingColor = this.getRatingColor(rating.avg_rating);
+            const qualityColor = this.getRatingColor(rating.avg_rating);
+            const difficultyColor = this.getDifficultyColor(rating.avg_difficulty);
             
-            const ratingBox = document.createElement('div');
-            ratingBox.style.cssText = `
-                background: ${ratingColor};
+            const qualityBox = document.createElement('div');
+            qualityBox.style.cssText = `
+                background: ${qualityColor};
                 color: white;
-                padding: 6px 10px;
+                padding: 8px 10px;
                 border-radius: 4px;
                 text-align: center;
                 font-weight: bold;
                 min-width: 50px;
             `;
-            ratingBox.innerHTML = `
+            qualityBox.innerHTML = `
                 <div style="font-size: 16px;">${rating.avg_rating.toFixed(1)}</div>
-                <div style="font-size: 10px; opacity: 0.9;">/ 5.0</div>
+                <div style="font-size: 9px; opacity: 0.9;">QUALITY</div>
             `;
 
-            const stats = document.createElement('div');
-            stats.style.cssText = `
-                font-size: 11px;
-                color: #666;
+            const difficultyBox = document.createElement('div');
+            difficultyBox.style.cssText = `
+                background: ${difficultyColor};
+                color: white;
+                padding: 8px 10px;
+                border-radius: 4px;
                 text-align: center;
-                line-height: 1.3;
+                font-weight: bold;
+                min-width: 50px;
             `;
-            stats.innerHTML = `
-                <div><strong>Difficulty:</strong> ${rating.avg_difficulty.toFixed(1)}</div>
-                <div><strong>Retake:</strong> ${rating.would_take_again_percent.toFixed(0)}%</div>
-                <div style="color: #999; margin-top: 2px;">${rating.num_ratings} ratings</div>
+            difficultyBox.innerHTML = `
+                <div style="font-size: 16px;">${rating.avg_difficulty.toFixed(1)}</div>
+                <div style="font-size: 9px; opacity: 0.9;">DIFFICULTY</div>
             `;
 
-            container.appendChild(ratingBox);
-            container.appendChild(stats);
+            const ratingsCount = document.createElement('div');
+            ratingsCount.style.cssText = `
+                display: flex;
+                align-items: center;
+                font-size: 10px;
+                color: #999;
+                padding-left: 4px;
+            `;
+            ratingsCount.textContent = `${rating.num_ratings}`;
+
+            container.appendChild(qualityBox);
+            container.appendChild(difficultyBox);
+            container.appendChild(ratingsCount);
         } else {
             container.style.cssText += `
                 justify-content: center;
@@ -99,6 +119,7 @@ class ProfessorEnhancer {
                 font-size: 12px;
                 font-style: italic;
                 min-height: 60px;
+                min-width: 70px;
             `;
             container.textContent = 'No data';
         }

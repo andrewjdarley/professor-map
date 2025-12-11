@@ -8,3 +8,4 @@
 12/3/25,  Integrated Immediate feedback from presentation 1
 12/8/25,  Modeled remaining work 1
 12/9/25,  Migration to Javascript and MyMAP syntax integration 2
+12/10/25, Made the Chrome extension and polished things up
